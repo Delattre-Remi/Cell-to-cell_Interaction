@@ -50,15 +50,19 @@ def distance(a, b):
     return np.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]))
 
 def isCloseToOtherPointInArr(arr, point, maxDist):
+    """Return true if any point in the given array is within maxDist to the point given
+
+    Args:
+        arr (array): array to look throught
+        point (tuple): point to look around
+        maxDist (int): maxDistance to look around
+
+    Returns:
+        [bool]: True if found a point False otherwise
+    """ 
     for p in arr:
         if(distance(point, p) < maxDist and p != point) : return True
     return False
-
-def removeDuplicates(arr, minDist):
-    for point in arr:
-        tmpArr = [x[1] for x in arr]
-        if(isCloseToOtherPointInArr(tmpArr, point[1], minDist)):
-            arr.remove(point)
 
 # endregion UtilFunctions
 
@@ -325,12 +329,6 @@ leftLines = leftCompletedLines + leftCompleteLines
 rightLines = rightCompletedLines + rightCompleteLines
 allCenters = [x for list in (leftLines + rightLines) for x in list] + centerColumn
 
-
-print(len(allCenters))
-removeDuplicates(allCenters, 1)
-print(len(allCenters))
-
-
 # On trace un rectangle et un chiffre par point
 img = cv2.imread(PROSSESED_DIRNAME + "rotated.png")
 for point in allCenters:
@@ -353,4 +351,4 @@ h = numberOfColumnsOnOneSide * 2 + 1
 presenceArray = [[0 for _ in range(h)] for _ in range(w)] 
 
 #printArr(presenceArray)
-cv2.imwrite("recognition2.png", img)
+cv2.imwrite("recognition.png", img)
