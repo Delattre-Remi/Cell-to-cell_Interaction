@@ -1,3 +1,6 @@
+### Les rectangles jaunes signifient qu'un contours à été supprimé sur la base de son rectangle le plus petit
+
+from turtle import distance
 import cv2
 import numpy as np
 
@@ -14,15 +17,28 @@ def hasValueBetween(arr, value, thresh):
             break
     return bool
 
+def discriminateContour(cnt):
+    area = cv2.contourArea(cnt)
+    if(area < 450 or area > 800) :
+        # Show which contours were close to being ruled out ::: if(area > 200 and area < 1000) : cv2.drawContours(img, cnt, -1, (255,0,0), 5)
+        return False
+    x,y,w,h = cv2.boundingRect(cnt)
+    ratio = w / h if w > h else h / w
+    if(ratio < 2) : 
+        return True
+    cv2.rectangle(img,(x,y),(x+w,y+h),(0,255, 255), 10)
+    return False
+
 done = False
-angle = 0
+angle = 1.25
 negative = False
 changingDir = False
 finalDistances = []
 minDist = 9999
+
 while not done :
     img = cv2.imread("Data/Brightfield/BF no cells.jpg")
-    img = rotate_image(img, angle * (-1))
+    img = rotate_image(img, angle)
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     ret,th = cv2.threshold(gray, 127, 255, 0)
@@ -31,66 +47,76 @@ while not done :
     contours, hierarchy = cv2.findContours(th,2,1)
 
     # Filter seulement les contours qui nous intéressent (ceux entre 500 et 800 pixels de surface)
-    contours = list(filter(lambda a : cv2.contourArea(a) < 800 and cv2.contourArea(a) > 500 ,contours))
+    contours = list(filter(lambda a : discriminateContour(a) ,contours))
 
     # Coefficient pour la taille des rectangles
     size = 33
     centers = []
+    distances = []
 
     # Créer un rectangle autour de chaque contour choisi
     for c in contours : 
         M = cv2.moments(c)
         cX = int(M["m10"] / M["m00"])
         cY = int(M["m01"] / M["m00"])
-        startPoint = (cX - size, cY - size)
-        endPoint = (cX + size, cY + (size * 2))
-        width, height = endPoint[0] - startPoint[0], endPoint[1] - startPoint[1]
-        center = (int(startPoint[0] + width/2), int(startPoint[1] + height/2))
-        cv2.circle(img, center, 2, (0,0,255), thickness=5)
-        cv2.rectangle(img, startPoint, endPoint, (255, 0, 0))
-        centers.append(center)
+        centers.append((cX,cY))
 
-    centerClusteredByX = centers
-    centerClusteredByX.sort()
+    centers.sort()
 
     # Créer les colonnes de puits
-    last = centerClusteredByX[0][0]
+    last = centers[0][0]
     cluster = []
     clusters = []
-    distances = []
-    for point in centerClusteredByX:
-        distance = np.abs(point[0] - last)
-        if(distance < 5) : 
+    for point in centers:
+        if(np.abs(point[0] - last) < 50) : 
             cluster.append(point)
-            distances.append(distance)
+            distances.append(np.abs(point[0] - last))
         else:
-            if(len(cluster) > 0) : clusters.append(cluster)
-            cluster = []
+            clusters.append(cluster)
+            cluster = [point]
         last = point[0]
+    clusters.append(cluster)
 
-    
-    listPointsInRow = []
+    # Créer les lignes noires qui relient les colonnes de puits
+    verticalClustersLengths = []
     for cluster in clusters:
-        pointsInRow = []
-        for point in cluster:
-            pointsInRow = list(filter(lambda a : np.abs(a[0] - point[0]) < 20 ,cluster))
-            listPointsInRow.append(len(pointsInRow))
-
-    for cluster in clusters:
+        cluster.sort(key = lambda a : a[1])
+        verticalClustersLengths.append(len(cluster))
         cv2.line(img, cluster[0], cluster[-1], (0,0,0), thickness=3)
+
+    # Colonne du centre
+    centerColumnX = int(np.mean(list(map(lambda a : a[0] ,clusters[int(len(verticalClustersLengths) / 2)]))))
+    cv2.line(img, (centerColumnX, 0), (centerColumnX, 2040), (255,255,0), thickness= 3)
+
+    # Création des rectanles autour des puits détectés via les contours
+    for center in centers:
+        cX = center[0]
+        cY = center[1]
+        startPoint = (cX - size, cY - size)
+        endPoint   = (cX + size, cY + (size * 2))
+        width, height = endPoint[0] - startPoint[0], endPoint[1] - startPoint[1]
+        center = (int(startPoint[0] + width/2), int(startPoint[1] + height/2))
+        if(cX > centerColumnX + 10) : 
+            startPoint = (startPoint[0] , startPoint[1] - size)
+            endPoint   = (endPoint[0]   , endPoint[1]   - size)
+        cv2.circle(img, center, 2, (0,0,255), thickness=5)
+        cv2.rectangle(img, startPoint, endPoint, (255, 0, 0))
     
     distSum = np.sum(distances)
 
-    final = cv2.drawContours(img, contours, -1, (0,255,0), 3)
-    cv2.imwrite("Recogs/minus/recognition{}!{:.2f}.png".format(angle, distSum), img)
+    # Coloriage du contour selectionné
+    cv2.drawContours(img, contours, -1, (0,255,0), 2)
+    if(distSum < 85) : cv2.imwrite("AngleDetermination/Recognition #{} Angle {:.2f} ! Distance {:.0f}.png".format(int(angle * 100), angle, distSum), img)
     
     finalDistances.append([distSum, angle])
     if(distSum - minDist > 50) :
         done = True
+
     elif(distSum < minDist) :
         minDist = distSum
         print(minDist)
 
     angle += 0.01
 
-print(finalDistances)
+contour_areas = [cv2.contourArea(a) for a in contours]
+print("Mean area : {:.2f}\nMax area : {}\nMin area: {}".format(np.mean(contour_areas), np.amax(contour_areas), np.amin(contour_areas)))

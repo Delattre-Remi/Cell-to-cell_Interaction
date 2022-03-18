@@ -35,13 +35,18 @@ def hasValueBetween(arr, value, thresh):
             break
     return [bool, i]
 
-def printArr(arr):
-    """Print an array line by line
-
-    Args:
-        arr (array): Array to print
-    """
-    for x in range(len(arr[0])) : print(arr[x])
+def printPositionArray(arr):
+    y = 0
+    str = ''
+    for i in range(19) : str += "   |     {:2d}    ".format(i)
+    print(str)
+    for line in arr:
+        strLine = "{:2d} | ".format(y)
+        y += 1
+        for point in line:
+            if(type(point) == type(0)) : point = (-1,-1)
+            strLine += "({:4d}, {:4d}) : ".format(point[0], point[1])
+        print(strLine)
 
 def isSameColor(c1, c2):
     return (c1[0] == c2[0] and c1[1] == c2[1] and c1[2] == c2[2])
@@ -61,26 +66,36 @@ def isCloseToOtherPointInArr(arr, point, maxDist):
         [bool]: True if found a point False otherwise
     """ 
     for p in arr:
-        if(distance(point, p) < maxDist and p != point) : return True
+        first = True
+        if(distance(point, p) < maxDist and (p != point and first)) : 
+            first = False
+            return True
     return False
+
+def removeDuplicates(arr, maxDist):
+    for point in arr:
+        for p in arr:
+            if(distance(point[1], p[1]) < maxDist and (arr.count(p) > 1 or p[0] != point[0])) : 
+                arr.remove(p)
+    return arr
 
 # endregion UtilFunctions
 
 # region InitConstants
 CENTER_COLOR = (255,0,255)
-CALCULATED = 50
-DETECTED = 0
-IMG_WIDTH = 2048
-IMG_HEIGHT = 2048
+CALCULATED = 50 # Identifiant d'un centre calculé
+DETECTED = 0 # Identifiant d'un centre detecté
 RECTANGLE_SIZE = 33
 PROSSESED_DIRNAME = "Processed/"
-DEBUG = True
+SHOW_CONTOURS = False
+SHOW_LABELS = False
+DEBUG = False
 
 # endregion InitConstants
 
 # region CustomFunctions
 
-def getContourCenters(img, draw = False):
+def getContourCenters(img, IMG_WIDTH):
     if(DEBUG) : test_img = cv2.imread(PROSSESED_DIRNAME + "rotated.png")
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _,th = cv2.threshold(gray, 127, 255, 0)
@@ -90,7 +105,7 @@ def getContourCenters(img, draw = False):
 
     # Filter seulement les contours qui nous intéressent (ceux entre 500 et 800 pixels de surface)
     contours = list(filter(lambda a : cv2.contourArea(a) < 800 and cv2.contourArea(a) > 500 ,contours))
-    if(draw) : cv2.drawContours(img, contours, -1, (0,255,0), 3)
+    if(SHOW_CONTOURS) : cv2.drawContours(img, contours, -1, (0,255,0), 3)
 
     # Coefficient pour la taille des rectangles
     centers = []
@@ -130,13 +145,14 @@ def getVerticalClusters(centers):
     verticalClusters.append(cluster)
     return verticalClusters
 
-def getHorizontalClusters(centersToCheck, numberOfColumnsOnOneSide, centerColumnX):
+def getHorizontalClusters(centersToCheck, numberOfColumnsOnOneSide, centerColumnX, centers, IMG_WIDTH, IMG_HEIGHT):
     if(DEBUG) : test_img = cv2.imread(PROSSESED_DIRNAME + "Step_1_marked_centers.png")
     found = False
     cluster = []
     horizontalClusters = []
     centerColumn = []
     size = RECTANGLE_SIZE * 2
+
     # Groupement des points horizontalement
     while (len(centersToCheck) > 0) :
         if(not found) : 
@@ -162,7 +178,7 @@ def getHorizontalClusters(centersToCheck, numberOfColumnsOnOneSide, centerColumn
                 x = center[0] + i 
                 if(x > IMG_HEIGHT - 1) : continue
                 if(DEBUG and test_img[y][x][0] != 255) : test_img[y][x] = (0,255,0)
-                if(isSameColor(img[y][x], CENTER_COLOR)) : 
+                if((x, y) in centers) : 
                     closestCenter = (x, y)
                     centersToCheck.remove(closestCenter)
                     cluster.append(closestCenter)
@@ -198,7 +214,7 @@ def associateHorizontalClusterWithXpos(horizontalClusters, XposOfColumns):
     if(DEBUG) : cv2.imwrite(PROSSESED_DIRNAME + "Step_3_xpos.png", test_img)
     return horizontalClustersWithX
 
-def filterHorizontalClusters(horizontalClustersWithX):
+def filterHorizontalClusters(horizontalClustersWithX, numberOfColumnsOnOneSide, centerColumnX):
     leftIncompleteLines = []
     rightIncompleteLines = []
     leftCompleteLines = []
@@ -244,7 +260,7 @@ def getOffsets(leftCompleteLines, rightCompleteLines):
     rightyOffset = int(yOffsetSum / x)
     return [leftxOffset, leftyOffset, rightxOffset, rightyOffset]
 
-def completeHorizontalClusters(leftIncompleteLines, rightIncompleteLines, leftxOffset, leftyOffset, rightxOffset, rightyOffset):
+def completeHorizontalClusters(leftIncompleteLines, rightIncompleteLines, leftxOffset, leftyOffset, rightxOffset, rightyOffset, numberOfColumnsOnOneSide):
     if(DEBUG) : test_img = cv2.imread(PROSSESED_DIRNAME + "Step_1_marked_centers.png")
     leftCompletedLines = []
     existingPoints = [x[1] for list in leftIncompleteLines for x in list]
@@ -281,74 +297,177 @@ def completeHorizontalClusters(leftIncompleteLines, rightIncompleteLines, leftxO
             existingPoints.append(pos)
             lastIndex += 1
         rightCompletedLines.append(cluster)
+
     if(DEBUG) : 
         for line in leftCompletedLines + rightCompletedLines:
             for point in line:
                 if(point[2] == CALCULATED) : cv2.circle(test_img, point[1], 4,(0,255,0), thickness=3)
-        cv2.imwrite(PROSSESED_DIRNAME + "Step_4_completion.png", test_img)
+        cv2.imwrite(PROSSESED_DIRNAME + "Step_4_line_completion.png", test_img)
     return [leftCompletedLines, rightCompletedLines]
+
+def fillMissingCenterColumn(allCenters, numberOfColumnsOnOneSide, centerColumn, verticalClusters) : 
+    centersSortedByHeight = allCenters
+
+    valuesSet = set([x[0] for x in centersSortedByHeight])
+    centersSortedByHeight = [[list for list in centersSortedByHeight if list[0] == value] for value in valuesSet]
+    centersSortedByHeight.sort(key = lambda x : x[0])
+    centersSortedByHeight.sort(key = lambda x : x[1][1])
+
+    upperPoint = centersSortedByHeight[numberOfColumnsOnOneSide][0][1][0]
+    lowerPoint = centersSortedByHeight[numberOfColumnsOnOneSide + 1][1][1][0]
+    found = False
+    missingAtTop = 0
+    while(not found) :
+        for center in centerColumn:
+            if(center[1][0] > upperPoint and center[1][0] < lowerPoint) : found = True
+            else : 
+                missingAtTop += 1
+                upperPoint = centersSortedByHeight[numberOfColumnsOnOneSide + missingAtTop][0][1][0]
+                lowerPoint = centersSortedByHeight[numberOfColumnsOnOneSide + missingAtTop + 1][1][1][0]
+
+    w = np.amax(np.amax([len(x) for x in verticalClusters]))
+    missingAtBottom = w - len(centerColumn)
+    centerColumn.sort(key = lambda x : x[1][1])
+
+    yOffsetSum = 0
+    x = 0
+    for i in range(len(centerColumn) - 1) :
+        yOffsetSum += centerColumn[i + 1][1][1] - centerColumn[i][1][1]
+        x += 1
+
+    yOffset = int(yOffsetSum/x)
+
+    while(missingAtBottom > 0):
+        pos = (centerColumn[-1][1][0], centerColumn[-1][1][1] + yOffset)
+        newPoint = [9, pos, CALCULATED]
+        centerColumnPos = [x[1] for x in centerColumn]
+        if(not isCloseToOtherPointInArr(centerColumnPos, pos, 10)) :
+            allCenters.append(newPoint)
+            missingAtBottom -= 1
+        centerColumn.append(newPoint)
+
+    return [allCenters, w, centersSortedByHeight, yOffset]
+
+def fillMissingHorizontalClusters(centersSortedByHeight, allCenters, numberOfColumnsOnOneSide, yOffset, w) : 
+    valuesSet = range(0, 2 * numberOfColumnsOnOneSide + 1)
+    firstLeftColumn = centersSortedByHeight[0]
+    lastLeftColumn = centersSortedByHeight[numberOfColumnsOnOneSide - 1]
+    while(len(firstLeftColumn) < w and len(lastLeftColumn) < w):
+        for heightCluster in centersSortedByHeight : heightCluster.sort(key = lambda x : x[1][1])
+        for i in range(numberOfColumnsOnOneSide):
+            centerAbove = centersSortedByHeight[i][-1][1]
+            pos = (centerAbove[0], centerAbove[1] + yOffset)
+            newPoint = (i, pos, CALCULATED)
+            allCenters.append(newPoint)
+        centersSortedByHeight = allCenters
+        centersSortedByHeight = [[list for list in centersSortedByHeight if list[0] == value] for value in valuesSet]
+        centersSortedByHeight.sort(key = lambda x : x[1][1])
+        firstLeftColumn = centersSortedByHeight[0]
+        lastLeftColumn = centersSortedByHeight[numberOfColumnsOnOneSide - 1]
+
+    firstRightColumn = centersSortedByHeight[numberOfColumnsOnOneSide + 1]
+    lastRightColumn = centersSortedByHeight[-1]
+    while(len(firstRightColumn) < w and len(lastRightColumn) < w):
+        for heightCluster in centersSortedByHeight : heightCluster.sort(key = lambda x : x[1][1])
+        for i in range(numberOfColumnsOnOneSide):
+            centerAbove = centersSortedByHeight[i + numberOfColumnsOnOneSide + 1][-1][1]
+            pos = (centerAbove[0], centerAbove[1] + yOffset)
+            newPoint = [numberOfColumnsOnOneSide + 1 + i, pos, CALCULATED]
+            allCenters.append(newPoint)
+        centersSortedByHeight = allCenters
+        centersSortedByHeight = [[list for list in centersSortedByHeight if list[0] == value] for value in valuesSet]
+        centersSortedByHeight.sort(key = lambda x : x[1][1])
+        firstRightColumn = centersSortedByHeight[numberOfColumnsOnOneSide + 1]
+        lastRightColumn = centersSortedByHeight[-1]
+    return allCenters
+
+def populateArray(allCenters, numberOfColumnsOnOneSide) : 
+    centersSortedByHeight = [[list for list in allCenters if list[0] == value] for value in range(2 * numberOfColumnsOnOneSide + 1)]
+    centersSortedByHeight.sort(key = lambda x : x[0][0])
+    for heightCluster in centersSortedByHeight : heightCluster.sort(key = lambda x : x[1][1])
+    positionArray = [[0 for _ in range(2 * numberOfColumnsOnOneSide + 1)] for _ in range(len(centersSortedByHeight[0]))]
+    for x in range(len(centersSortedByHeight)) :
+        heightCluster = centersSortedByHeight[x]
+        for y in range(len(heightCluster)) :
+            point = heightCluster[y][1]
+            positionArray[y][heightCluster[y][0]] = point
+    return [positionArray, centersSortedByHeight]
+
+def drawFigures(allCenters, centerColumnX) : 
+    img = cv2.imread(PROSSESED_DIRNAME + "rotated.png")
+    for point in allCenters:
+        cX, cY = point[1][0], point[1][1]
+        startPoint = (cX - RECTANGLE_SIZE, cY - RECTANGLE_SIZE)
+        endPoint   = (cX + RECTANGLE_SIZE, cY + (RECTANGLE_SIZE * 2))
+        if(cX > centerColumnX + 20) :
+            startPoint = (startPoint[0], startPoint[1] - RECTANGLE_SIZE)
+            endPoint   = (endPoint[0]  , endPoint[1]   - RECTANGLE_SIZE)
+        color = (0,255,0) if(point[2] == CALCULATED) else (255,0,0)
+        cv2.rectangle(img, startPoint, endPoint, color)
+        if(SHOW_LABELS) : cv2.putText(img, str(point[0]), point[1], cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+        cv2.circle(img, point[1], 3, color, thickness=3)
+    return img
 
 # endregion CustomFunctions
 
-img = cv2.imread("Data/Brightfield/BF no cells.jpg")
-img = rotate_image(img, 1.5)
-cv2.imwrite(PROSSESED_DIRNAME + "rotated.png", img)
+def getPositionArray(imgPath):
+    img = cv2.imread(imgPath)
+    img = rotate_image(img, 1.53)
+    IMG_WIDTH, IMG_HEIGHT, c = img.shape
+    cv2.imwrite(PROSSESED_DIRNAME + "rotated.png", img)
 
-# On récupère le centre de chaque rectangles formé autour des contours détectés par OpenCV
-centers = getContourCenters(img)
+    # On récupère le centre de chaque rectangles formé autour des contours détectés par OpenCV
+    centers = getContourCenters(img, IMG_WIDTH)
 
-# On regroupe chaque centre dans une colonne
-verticalClusters = getVerticalClusters(centers)
-numberOfColumnsOnOneSide = int(len(verticalClusters) / 2)
+    # On regroupe chaque centre dans une colonne
+    verticalClusters = getVerticalClusters(centers)
+    numberOfColumnsOnOneSide = int(len(verticalClusters) / 2)
 
-# Marquage de la colonne du centre
-centerColumnX = int(np.mean(list(map(lambda a : a[0], verticalClusters[numberOfColumnsOnOneSide]))))
-cv2.line(img, (centerColumnX, 0), (centerColumnX, 2040), (255,255,0), thickness= 3)
+    # Marquage de la colonne du centre
+    centerColumnX = int(np.mean(list(map(lambda a : a[0], verticalClusters[numberOfColumnsOnOneSide]))))
+    cv2.line(img, (centerColumnX, 0), (centerColumnX, 2040), (255,255,0), thickness= 3)
 
-# On regroupe chaque centre dans une ligne
-horizontalClusters, centerColumn = getHorizontalClusters(centers, numberOfColumnsOnOneSide, centerColumnX)
+    # On regroupe chaque centre dans une ligne
+    horizontalClusters, centerColumn = getHorizontalClusters(centers, numberOfColumnsOnOneSide, centerColumnX, centers, IMG_WIDTH, IMG_HEIGHT)
 
-# On calcules quelles abscisses correspondent à quelle colonne
-XposOfColumns = getXposOfColumns(verticalClusters)
+    # On calcules quelles abscisses correspondent à quelle colonne
+    XposOfColumns = getXposOfColumns(verticalClusters)
 
-# On associe chaque centre de chaque ligne à sa colonne
-horizontalClustersWithX = associateHorizontalClusterWithXpos(horizontalClusters, XposOfColumns)
+    # On associe chaque centre de chaque ligne à sa colonne
+    horizontalClustersWithX = associateHorizontalClusterWithXpos(horizontalClusters, XposOfColumns)
 
-# On peut alors identifier quelles lignes sont incomplètes et lesquelles le sont
-leftIncompleteLines, leftCompleteLines, rightIncompleteLines, rightCompleteLines = filterHorizontalClusters(horizontalClustersWithX)
-lineClusters = [leftIncompleteLines, rightIncompleteLines, leftCompleteLines, rightCompleteLines]
+    # On peut alors identifier quelles lignes sont incomplètes et lesquelles le sont
+    leftIncompleteLines, leftCompleteLines, rightIncompleteLines, rightCompleteLines = filterHorizontalClusters(horizontalClustersWithX, numberOfColumnsOnOneSide, centerColumnX)
+    lineClusters = [leftIncompleteLines, rightIncompleteLines, leftCompleteLines, rightCompleteLines]
 
-# On calcule l'écart moyen entre chaque centre pour l'appliquer aux centres manquants
-leftxOffset, leftyOffset, rightxOffset, rightyOffset = getOffsets(leftCompleteLines, rightCompleteLines)
+    # On calcule l'écart moyen entre chaque centre pour l'appliquer aux centres manquants
+    leftxOffset, leftyOffset, rightxOffset, rightyOffset = getOffsets(leftCompleteLines, rightCompleteLines)
 
-# On complète les centres que nous n'avions pas pu détecter
-leftCompletedLines, rightCompletedLines = completeHorizontalClusters(leftIncompleteLines, rightIncompleteLines, leftxOffset, leftyOffset, rightxOffset, rightyOffset)
+    # On complète les centres que nous n'avions pas pu détecter
+    leftCompletedLines, rightCompletedLines = completeHorizontalClusters(leftIncompleteLines, rightIncompleteLines, leftxOffset, leftyOffset, rightxOffset, rightyOffset, numberOfColumnsOnOneSide)
 
-# On regroupe puis applati les points pour pouvoir les utiliser plus simplement
-leftLines = leftCompletedLines + leftCompleteLines
-rightLines = rightCompletedLines + rightCompleteLines
-allCenters = [x for list in (leftLines + rightLines) for x in list] + centerColumn
+    # On regroupe puis applati les points pour pouvoir les utiliser plus simplement
+    leftLines = leftCompletedLines + leftCompleteLines
+    rightLines = rightCompletedLines + rightCompleteLines
+    allCenters = [x for list in (leftLines + rightLines + [centerColumn]) for x in list]
 
-# On trace un rectangle et un chiffre par point
-img = cv2.imread(PROSSESED_DIRNAME + "rotated.png")
-for point in allCenters:
-    cX, cY = point[1][0], point[1][1]
-    startPoint = (cX - RECTANGLE_SIZE, cY - RECTANGLE_SIZE)
-    endPoint   = (cX + RECTANGLE_SIZE, cY + (RECTANGLE_SIZE * 2))
-    if(cX > centerColumnX + 20) :
-        startPoint = (startPoint[0], startPoint[1] - RECTANGLE_SIZE) 
-        endPoint   = (endPoint[0]  , endPoint[1]   - RECTANGLE_SIZE) 
-    width  = endPoint[0] - startPoint[0]
-    height = endPoint[1] - startPoint[1]
-    cv2.rectangle(img, startPoint, endPoint, (255,0,255))
-    cv2.putText(img, str(point[0]), point[1], cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
-    if(point[2] == CALCULATED) : circle_color = (0,255,0)
-    else                       : circle_color = (255,0,0)
-    cv2.circle(img, point[1], 3, circle_color, thickness=3)
+    # On complète les centres manquants sur la colonne du milieu
+    allCenters, w, centersSortedByHeight, yOffset = fillMissingCenterColumn(allCenters, numberOfColumnsOnOneSide, centerColumn, verticalClusters)
 
-w = np.amax(np.amax([len(x) for x in verticalClusters]))
-h = numberOfColumnsOnOneSide * 2 + 1
-presenceArray = [[0 for _ in range(h)] for _ in range(w)] 
+    # On complète les lignes manquantes vers le bas
+    allCenters = fillMissingHorizontalClusters(centersSortedByHeight, allCenters, numberOfColumnsOnOneSide, yOffset, w)
+    allCenters = removeDuplicates(allCenters, 50)
 
-#printArr(presenceArray)
-cv2.imwrite("recognition.png", img)
+    # On trace un rectangle et un chiffre par point
+    img = drawFigures(allCenters, centerColumnX)
+
+    # On remplit le tableau des positions de chaque puit par rapport à la grille
+    positionArray, centersSortedByHeight = populateArray(allCenters, numberOfColumnsOnOneSide)
+
+    if(DEBUG) : cv2.imwrite("recognition.png", img)
+
+    return positionArray
+
+positionArray = getPositionArray("Data/Brightfield/BF no cells.jpg")
+
+printPositionArray(positionArray)
