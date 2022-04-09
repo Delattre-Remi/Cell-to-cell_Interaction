@@ -1,96 +1,14 @@
 import cv2
 import numpy as np
-
-# region UtilFunctions
-
-def rotate_image(image, angle):
-    """Rotate the image by a certain angle
-
-    Args:
-        image (openCV image): The image to be rotated
-        angle (int): The angle to rotate the image
-
-    Returns:
-        image: Rotated image
-    """
-    image_center = tuple(np.array(image.shape[1::-1]) / 2)
-    rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
-    return cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
-
-def hasValueBetween(arr, value, thresh):
-    """Return if the array has a value close to the value given
-
-    Args:
-        arr (array): Array to scan through
-        value (int): Value to look for
-        thresh (int): Threshold to look around
-
-    Returns:
-        [bool]: True if found, else either way
-    """
-    bool = False
-    for i in range(len(arr)):
-        if(arr[i] >= value - thresh and arr[i] <= value + thresh): 
-            bool = True
-            break
-    return [bool, i]
-
-def printPositionArray(arr):
-    y = 0
-    str = ''
-    for i in range(19) : str += "   |     {:2d}    ".format(i)
-    print(str)
-    for line in arr:
-        strLine = "{:2d} | ".format(y)
-        y += 1
-        for point in line:
-            if(type(point) == type(0)) : point = (-1,-1)
-            strLine += "({:4d}, {:4d}) : ".format(point[0], point[1])
-        print(strLine)
-
-def isSameColor(c1, c2):
-    return (c1[0] == c2[0] and c1[1] == c2[1] and c1[2] == c2[2])
-
-def distance(a, b):
-    return np.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]))
-
-def isCloseToOtherPointInArr(arr, point, maxDist):
-    """Return true if any point in the given array is within maxDist to the point given
-
-    Args:
-        arr (array): array to look throught
-        point (tuple): point to look around
-        maxDist (int): maxDistance to look around
-
-    Returns:
-        [bool]: True if found a point False otherwise
-    """ 
-    for p in arr:
-        first = True
-        if(distance(point, p) < maxDist and (p != point and first)) : 
-            first = False
-            return True
-    return False
-
-def removeDuplicates(arr, maxDist):
-    for point in arr:
-        for p in arr:
-            if(distance(point[1], p[1]) < maxDist and (arr.count(p) > 1 or p[0] != point[0])) : 
-                arr.remove(p)
-    return arr
-
-# endregion UtilFunctions
+from utils import *
+from angleDetermination import getBestAngle
 
 # region InitConstants
 CENTER_COLOR = (255,0,255)
 CALCULATED = 50 # Identifiant d'un centre calculé
 DETECTED = 0 # Identifiant d'un centre detecté
-RECTANGLE_SIZE = 33
-PROSSESED_DIRNAME = "Processed/"
 SHOW_CONTOURS = False
 SHOW_LABELS = False
-DEBUG = False
-
 # endregion InitConstants
 
 # region CustomFunctions
@@ -119,10 +37,11 @@ def getContourCenters(img, IMG_WIDTH):
         # Vers le haut pour la droite du mileu
         if(cX > IMG_WIDTH / 2 + 50) : cY -= 20
         else                        : cY += 20
-        if(DEBUG) : cv2.circle(test_img, (cX, cY), 5, (255,0,0), thickness=3)
-        if(DEBUG) : cv2.circle(test_img, (cX, cY), 0, CENTER_COLOR)
-        cv2.circle(img, (cX, cY), 5, (255,0,0), thickness=3)
-        cv2.circle(img, (cX, cY), 0, CENTER_COLOR)
+        if(DEBUG) : 
+            cv2.circle(test_img, (cX, cY), 5, (255,0,0), thickness=3)
+            cv2.circle(test_img, (cX, cY), 0, CENTER_COLOR)
+            cv2.circle(img, (cX, cY), 5, (255,0,0), thickness=3)
+            cv2.circle(img, (cX, cY), 0, CENTER_COLOR)
         centers.append((cX,cY))
 
     if(DEBUG) : cv2.imwrite(PROSSESED_DIRNAME + "Step_1_marked_centers.png", test_img)
@@ -339,7 +258,7 @@ def fillMissingCenterColumn(allCenters, numberOfColumnsOnOneSide, centerColumn, 
 
     while(missingAtBottom > 0):
         pos = (centerColumn[-1][1][0], centerColumn[-1][1][1] + yOffset)
-        newPoint = [9, pos, CALCULATED]
+        newPoint = [numberOfColumnsOnOneSide, pos, CALCULATED]
         centerColumnPos = [x[1] for x in centerColumn]
         if(not isCloseToOtherPointInArr(centerColumnPos, pos, 10)) :
             allCenters.append(newPoint)
@@ -410,11 +329,10 @@ def drawFigures(allCenters, centerColumnX) :
 
 # endregion CustomFunctions
 
-def getPositionArray(imgPath):
-    img = cv2.imread(imgPath)
-    img = rotate_image(img, 1.53)
-    IMG_WIDTH, IMG_HEIGHT, c = img.shape
-    cv2.imwrite(PROSSESED_DIRNAME + "rotated.png", img)
+def getPositionArray(img):
+    print("Finding holes positions ...")
+    IMG_WIDTH, IMG_HEIGHT, _ = img.shape
+    if(DEBUG) : cv2.imwrite(PROSSESED_DIRNAME + "rotated.png", img)
 
     # On récupère le centre de chaque rectangles formé autour des contours détectés par OpenCV
     centers = getContourCenters(img, IMG_WIDTH)
@@ -425,7 +343,7 @@ def getPositionArray(imgPath):
 
     # Marquage de la colonne du centre
     centerColumnX = int(np.mean(list(map(lambda a : a[0], verticalClusters[numberOfColumnsOnOneSide]))))
-    cv2.line(img, (centerColumnX, 0), (centerColumnX, 2040), (255,255,0), thickness= 3)
+    if(DEBUG) : cv2.line(img, (centerColumnX, 0), (centerColumnX, 2040), (255,255,0), thickness= 3)
 
     # On regroupe chaque centre dans une ligne
     horizontalClusters, centerColumn = getHorizontalClusters(centers, numberOfColumnsOnOneSide, centerColumnX, centers, IMG_WIDTH, IMG_HEIGHT)
@@ -459,15 +377,20 @@ def getPositionArray(imgPath):
     allCenters = removeDuplicates(allCenters, 50)
 
     # On trace un rectangle et un chiffre par point
-    img = drawFigures(allCenters, centerColumnX)
+    if(DEBUG) : img = drawFigures(allCenters, centerColumnX)
 
     # On remplit le tableau des positions de chaque puit par rapport à la grille
     positionArray, centersSortedByHeight = populateArray(allCenters, numberOfColumnsOnOneSide)
 
     if(DEBUG) : cv2.imwrite("recognition.png", img)
 
-    return positionArray
+    printPositionArray(positionArray)
 
-positionArray = getPositionArray("Data/Brightfield/BF no cells.jpg")
+    return [positionArray, centerColumnX]
 
-printPositionArray(positionArray)
+if __name__ == "__main__" :
+    imgPath = "Data/Brightfield/BF no cells.jpg"
+    angle = getBestAngle(imgPath)
+    img = load_image(imgPath, angle)
+    positionArray, centerColumnX = getPositionArray(img)
+    printPositionArray(positionArray)
