@@ -15,7 +15,7 @@ def getContourCenters(img, isTcell = False):
     contours, _ = cv2.findContours(th, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     # Filter seulement les contours qui nous intéressent
-    contours = list(filter(lambda a : cv2.contourArea(a) < 2000 and cv2.contourArea(a) > 200 ,contours))
+    contours = list(filter(lambda a : cv2.contourArea(a) < 2000 and cv2.contourArea(a) > 10 ,contours))
 
     centers = []
     for c in contours : 
