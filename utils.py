@@ -15,11 +15,11 @@ def load_image(imgPath, angle = 0):
         imgPath (String): Path to the image
         angle (int, optional): Angle the image needs to be rotated to. Defaults to 0.
     """
-    img = cv2.imread(imgPath)
-    if(img is None) : raise PathError('Given path {} is invalid !'.format(imgPath))
+    img = cv2.imdecode(np.fromfile(imgPath , dtype=np.uint8), cv2.IMREAD_COLOR)
+    if(img is None) : raise PathError('Given path is invalid !')
     return rotate_image(img, angle)
 
-def rotate_image(image, angle):
+def rotate_image(img, angle):
     """Rotate the image by a certain angle
 
     Args:
@@ -29,9 +29,9 @@ def rotate_image(image, angle):
     Returns:
         image: Rotated image
     """
-    image_center = tuple(np.array(image.shape[1::-1]) / 2)
+    image_center = tuple(np.array(img.shape[1::-1]) / 2)
     rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
-    return cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
+    return cv2.warpAffine(img, rot_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
 
 def hasValueBetween(arr, value, thresh):
     """Return if the array has a value close to the value given

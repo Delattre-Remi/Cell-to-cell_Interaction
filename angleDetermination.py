@@ -1,7 +1,7 @@
 ### Les rectangles jaunes signifient qu'un contours à été supprimé sur la base de son rectangle le plus petit
 import cv2
 import numpy as np
-from utils import rotate_image
+from utils import load_image
 
 def discriminateContour(cnt, img):
     area = cv2.contourArea(cnt)
@@ -22,9 +22,8 @@ def getBestAngle(imgPath):
 
     print("Finding best angle ...")
     while not done :
-        img = cv2.imread(imgPath)
-        img = rotate_image(img, angle)
-
+        img = load_image(imgPath, angle)
+        
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _, th = cv2.threshold(gray, 127, 255, 0)
 
